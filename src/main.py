@@ -39,11 +39,30 @@ class LiveCaptionApp:
         self.main_window.region_changed.connect(self.ocr_worker.set_region)
         self.main_window.config_changed.connect(self.on_config_changed)
 
-        # Worker -> UI (Erros)
+        # Dependency Handling
+        self.main_window.install_requested.connect(self.on_install_requested)
+
+        # Worker -> UI (Erros e Status)
         self.ocr_worker.error_occurred.connect(self.on_worker_error)
+        self.ocr_worker.dependency_status.connect(self.on_dependency_status)
+        self.ocr_worker.installation_progress.connect(self.main_window.update_status)
 
         # Worker -> Model (Fluxo de dados)
         self.ocr_worker.text_detected.connect(self.on_text_detected)
+
+    def on_install_requested(self):
+        self.main_window.set_installing_state()
+        self.ocr_worker.install_dependencies()
+
+    def on_dependency_status(self, is_ready, message):
+        if is_ready:
+            self.main_window.set_ready_state()
+            self.main_window.update_status(message)
+        else:
+            self.main_window.set_dependencies_missing()
+            # Só mostra popup se for uma mensagem de erro real vinda da instalação
+            if "Erro" in message:
+                self.main_window.show_error("Erro de Dependência", message)
 
     def on_start_requested(self, config):
         # Aplica configurações iniciais antes de começar
@@ -66,25 +85,12 @@ class LiveCaptionApp:
         self.stabilizer.set_auto_timeout(config['auto_timeout'])
 
     def on_text_detected(self, text):
-        # Passa texto cru para o estabilizador
-        # Loga texto cru (opcional, pode poluir muito. Melhor logar só o final)
-        # self.main_window.status_bar.showMessage(f"Lendo: {text[:30]}...")
         self.stabilizer.process_new_text(text)
 
     def on_stabilizer_commit(self, final_text):
         """Chamado quando uma frase é finalizada e estabilizada."""
-        # 1. Salvar em arquivo
         self.file_manager.append_text(final_text)
-
-        # 2. Atualizar UI
         self.main_window.append_log(final_text)
-
-        # Se o timeout mudou dinamicamente, atualiza a UI para refletir (visual feedback)
-        # Cuidado para não gerar loop de sinais.
-        # Idealmente a UI apenas mostraria, mas o SpinBox controla o valor.
-        # Se for auto, o valor do SpinBox poderia ser desabilitado ou atualizado.
-        # Vamos deixar simples por enquanto: Se auto está on, o valor interno muda,
-        # o spinbox fica cinza (já implementado na UI).
 
     def on_worker_error(self, title, message):
         self.main_window.show_error(title, message)
@@ -92,6 +98,8 @@ class LiveCaptionApp:
 
     def run(self):
         self.main_window.show()
+        # Inicia verificação de dependências após UI abrir
+        QTimer.singleShot(100, self.ocr_worker.check_dependencies)
         sys.exit(self.app.exec())
 
 if __name__ == "__main__":
