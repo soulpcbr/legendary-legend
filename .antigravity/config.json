@@ -1,0 +1,26 @@
+{
+	"mode": "autonomous",
+	"permissions": {
+		"terminal": {
+			"auto_run": true,
+			"require_approval": false
+		},
+		"filesystem": {
+			"auto_write": true,
+			"require_approval": false
+		},
+		"browser": {
+			"auto_navigate": true,
+			"require_approval": false
+		}
+	},
+	"automation": {
+		"auto_fix_lint": true,
+		"auto_run_tests": true,
+		"max_autonomous_steps": 50
+	},
+	"agent": {
+		"name": "Antigravity",
+		"role": "Senior Full-Stack Engineer"
+	}
+}
