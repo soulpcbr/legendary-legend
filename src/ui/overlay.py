@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QRubberBand, QApplication, QSizeGrip, QVBoxLayout, QLabel
+from PyQt6.QtWidgets import QWidget, QRubberBand, QApplication, QSizeGrip, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
 from PyQt6.QtCore import Qt, QRect, pyqtSignal
 from PyQt6.QtGui import QColor, QPalette, QPen, QPainter
 
@@ -27,10 +27,16 @@ class OverlaySelector(QWidget):
         self.info_label.setStyleSheet("color: white; background-color: red; border: none; font-weight: bold;")
         self.grip_layout.addWidget(self.info_label, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
-        # Adiciona SizeGrip no canto inferior direito
-        from PyQt6.QtWidgets import QHBoxLayout
+        # Botão de Confirmar
         h_layout = QHBoxLayout()
         h_layout.addStretch()
+        
+        self.btn_confirm = QPushButton("Confirmar Seleção", self)
+        self.btn_confirm.setStyleSheet("background-color: rgba(255,255,255,200); color: black; font-weight: bold; border: 2px solid white;")
+        self.btn_confirm.clicked.connect(self.confirm_selection)
+        h_layout.addWidget(self.btn_confirm)
+
+        # Adiciona SizeGrip no canto inferior direito
         self.size_grip = QSizeGrip(self)
         self.size_grip.setStyleSheet("background-color: transparent;")
         h_layout.addWidget(self.size_grip)

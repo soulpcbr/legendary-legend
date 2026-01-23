@@ -23,8 +23,8 @@ class OCRWorker(QThread):
         self.region = None # {'top': y, 'left': x, 'width': w, 'height': h}
         self.invert_colors = False
 
-        # MSS instance
-        self.sct = mss.mss()
+        # MSS instance - Criado na thread do worker para thread-safety
+        self.sct = None
 
         # EasyOCR Reader
         self.reader = None
@@ -84,6 +84,10 @@ class OCRWorker(QThread):
 
     def run(self):
         self._is_running = True
+
+        # Criar instância MSS DENTRO da thread QThread (thread-safety)
+        # MSS não é thread-safe, então deve ser criado na mesma thread que será usado
+        self.sct = mss.mss()
 
         if not self.reader:
             self.error_occurred.emit("Erro Interno", "Reader OCR não inicializado.")

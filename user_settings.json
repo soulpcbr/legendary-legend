@@ -1,0 +1,18 @@
+{
+  "capture_region": {
+    "x": 2110,
+    "y": -493,
+    "width": 673,
+    "height": 172
+  },
+  "timeout_ms": 1500,
+  "auto_timeout": true,
+  "invert_colors": true,
+  "similarity_threshold": 0.6,
+  "min_update_interval": 50,
+  "auto_recalc_interval": 30,
+  "auto_smart_adjust": true,
+  "jitter_detection_threshold": 50,
+  "stability_detection_threshold": 20,
+  "repetition_threshold": 0.8
+}
