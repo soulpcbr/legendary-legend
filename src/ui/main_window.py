@@ -10,6 +10,7 @@ class MainWindow(QMainWindow):
     stop_requested = pyqtSignal()
     region_changed = pyqtSignal(int, int, int, int) # x, y, w, h
     config_changed = pyqtSignal(dict) # Envia nova config em tempo real
+    install_requested = pyqtSignal() # Solicita instalação de dependências
 
     def __init__(self):
         super().__init__()
@@ -44,6 +45,13 @@ class MainWindow(QMainWindow):
         self.btn_record.setEnabled(False) # Só habilita após selecionar região
         controls_layout.addWidget(self.btn_record)
 
+        # Botão de Instalação (Inicialmente Oculto)
+        self.btn_install = QPushButton("Instalar Dependências")
+        self.btn_install.setStyleSheet("background-color: #e6ffcc; color: darkgreen; font-weight: bold;")
+        self.btn_install.setVisible(False)
+        self.btn_install.clicked.connect(self.install_requested.emit)
+        controls_layout.addWidget(self.btn_install)
+
         layout.addLayout(controls_layout)
 
         # --- Configurações ---
@@ -69,9 +77,7 @@ class MainWindow(QMainWindow):
         # Image Processing Row
         img_layout = QHBoxLayout()
         self.chk_invert_colors = QCheckBox("Inverter Cores (Texto Branco/Fundo Preto)")
-        self.chk_invert_colors.setChecked(False) # Padrão: Não inverte (assume Tesseract default ou processamento auto)
-        # Nota: Tesseract gosta de preto em branco. Se o input é branco em preto, Inverter = True -> Preto em branco.
-        # Vou deixar desmarcado por padrão mas com tooltip explicativo.
+        self.chk_invert_colors.setChecked(False)
         self.chk_invert_colors.setToolTip("Marque se a legenda original for texto branco em fundo preto.")
         self.chk_invert_colors.toggled.connect(self.emit_config_update)
         img_layout.addWidget(self.chk_invert_colors)
@@ -88,11 +94,34 @@ class MainWindow(QMainWindow):
         # --- Status Bar ---
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+        self.status_bar.showMessage("Verificando dependências...")
+
+    # --- Controle de Estado de Dependências ---
+    def set_dependencies_missing(self):
+        """Estado quando modelos OCR não foram encontrados."""
+        self.btn_select_region.setVisible(False)
+        self.btn_record.setVisible(False)
+
+        self.btn_install.setVisible(True)
+        self.btn_install.setEnabled(True)
+        self.btn_install.setText("Instalar Dependências (Automático)")
+        self.status_bar.showMessage("Dependências necessárias. Clique em Instalar para baixar.")
+
+    def set_installing_state(self):
+        """Estado durante download."""
+        self.btn_install.setEnabled(False)
+        self.btn_install.setText("Instalando... Aguarde.")
+        self.status_bar.showMessage("Baixando modelos OCR. Isso pode levar alguns minutos...")
+
+    def set_ready_state(self):
+        """Estado normal de operação."""
+        self.btn_install.setVisible(False)
+        self.btn_select_region.setVisible(True)
+        self.btn_record.setVisible(True)
         self.status_bar.showMessage("Pronto. Selecione uma região para começar.")
 
     def open_overlay(self):
         self.overlay.show()
-        # Centraliza overlay ou põe em posição default se quiser
         if not self.capture_region:
             self.overlay.resize(400, 100)
             self.overlay.move(100, 100)
@@ -140,7 +169,6 @@ class MainWindow(QMainWindow):
     @pyqtSlot(str)
     def append_log(self, text):
         self.log_area.append(text)
-        # Scroll to bottom
         sb = self.log_area.verticalScrollBar()
         sb.setValue(sb.maximum())
 
