@@ -1,19 +1,20 @@
 import os
 import datetime
 import glob
+from src.utils.paths import get_captions_dir
 
 class FileManager:
     MAX_FILES = 5  # 1 atual + 4 históricos
     CURRENT_FILE = "captions_current.txt"
     
-    def __init__(self, output_dir="captions"):
+    def __init__(self, output_dir=None):
         """
         Gerencia a escrita de legendas em arquivo.
         Mantém apenas 5 arquivos (1 atual + 4 históricos).
         Não cria novo arquivo a cada inicialização - reutiliza o arquivo atual.
         Rola automaticamente para novo arquivo quando atinge 2MB.
         """
-        self.output_dir = output_dir
+        self.output_dir = output_dir or get_captions_dir()
         self.MAX_FILE_SIZE = 2 * 1024 * 1024  # 2MB
         
         if not os.path.exists(self.output_dir):
@@ -137,6 +138,98 @@ class FileManager:
             print(f"Erro ao escrever no arquivo: {e}")
             import traceback
             traceback.print_exc()
+
+    def export_as_srt(self, output_path=None):
+        """
+        Exporta as captions do arquivo atual no formato SRT.
+        Lê o arquivo atual e converte timestamps para formato SRT.
+        Retorna o caminho do arquivo gerado.
+        """
+        import re
+        if output_path is None:
+            output_path = os.path.join(self.output_dir, "captions_export.srt")
+        
+        try:
+            current_file = os.path.join(self.output_dir, self.CURRENT_FILE)
+            if not os.path.exists(current_file):
+                return None
+            
+            with open(current_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            with open(output_path, 'w', encoding='utf-8') as out:
+                index = 1
+                for i, line in enumerate(lines):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    # Parse timestamp e texto: [HH:MM:SS] texto
+                    match = re.match(r'\[(\d{2}:\d{2}:\d{2})\]\s*(.*)', line)
+                    if match:
+                        timestamp = match.group(1)
+                        text = match.group(2)
+                        
+                        # SRT precisa de start --> end
+                        start_time = f"{timestamp},000"
+                        # End time: +3 segundos (estimativa)
+                        h, m, s = map(int, timestamp.split(':'))
+                        total_secs = h * 3600 + m * 60 + s + 3
+                        eh, em, es = total_secs // 3600, (total_secs % 3600) // 60, total_secs % 60
+                        end_time = f"{eh:02d}:{em:02d}:{es:02d},000"
+                        
+                        out.write(f"{index}\n")
+                        out.write(f"{start_time} --> {end_time}\n")
+                        out.write(f"{text}\n\n")
+                        index += 1
+            
+            return output_path
+        except Exception as e:
+            print(f"Erro ao exportar SRT: {e}")
+            return None
+
+    def export_as_vtt(self, output_path=None):
+        """
+        Exporta as captions do arquivo atual no formato WebVTT.
+        """
+        import re
+        if output_path is None:
+            output_path = os.path.join(self.output_dir, "captions_export.vtt")
+        
+        try:
+            current_file = os.path.join(self.output_dir, self.CURRENT_FILE)
+            if not os.path.exists(current_file):
+                return None
+            
+            with open(current_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            with open(output_path, 'w', encoding='utf-8') as out:
+                out.write("WEBVTT\n\n")
+                
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    match = re.match(r'\[(\d{2}:\d{2}:\d{2})\]\s*(.*)', line)
+                    if match:
+                        timestamp = match.group(1)
+                        text = match.group(2)
+                        
+                        start_time = f"{timestamp}.000"
+                        h, m, s = map(int, timestamp.split(':'))
+                        total_secs = h * 3600 + m * 60 + s + 3
+                        eh, em, es = total_secs // 3600, (total_secs % 3600) // 60, total_secs % 60
+                        end_time = f"{eh:02d}:{em:02d}:{es:02d}.000"
+                        
+                        out.write(f"{start_time} --> {end_time}\n")
+                        out.write(f"{text}\n\n")
+            
+            return output_path
+        except Exception as e:
+            print(f"Erro ao exportar VTT: {e}")
+            return None
 
     def close(self):
         """Fecha o arquivo com segurança."""

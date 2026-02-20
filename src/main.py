@@ -1,12 +1,17 @@
 import sys
 import os
 from PyQt6.QtWidgets import QApplication, QMessageBox
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtGui import QGuiApplication
+
+# Configura High DPI scaling para displays modernos (125%, 150%, 200%)
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
 
 # Adiciona o diretório pai ao path para encontrar o módulo src
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.ui.main_window import MainWindow
+from src.ui.system_tray import SystemTrayManager
 from src.workers.ocr_worker import OCRWorker
 from src.core.stabilizer import CaptionStabilizer
 from src.core.file_manager import FileManager
@@ -64,6 +69,49 @@ class LiveCaptionApp:
         
         # 7. Verificar dependências do OCR (isso vai sinalizar quando estiver pronto)
         self.ocr_worker.check_dependencies()
+
+        # 8. System Tray
+        self._setup_system_tray()
+
+    def _setup_system_tray(self):
+        """Configura o ícone na bandeja do sistema."""
+        self.tray = SystemTrayManager(self.main_window)
+        self.tray.show_requested.connect(self._show_main_window)
+        self.tray.quit_requested.connect(self._quit_app)
+        self.tray.toggle_recording_requested.connect(self._tray_toggle_recording)
+        self.tray.show()
+
+        # Sobrescreve closeEvent da janela para minimizar ao tray
+        self.main_window._original_close_event = self.main_window.closeEvent
+        self.main_window.closeEvent = self._on_close_event
+
+    def _show_main_window(self):
+        """Mostra e ativa a janela principal."""
+        self.main_window.show()
+        self.main_window.activateWindow()
+        self.main_window.raise_()
+
+    def _quit_app(self):
+        """Encerra o app completamente."""
+        if self.tray:
+            self.tray.hide()
+        self.app.quit()
+
+    def _tray_toggle_recording(self):
+        """Toggle gravação via tray."""
+        self.main_window.btn_record.click()
+
+    def _on_close_event(self, event):
+        """Minimiza para tray ao fechar em vez de sair."""
+        if self.tray and self.tray.is_available():
+            event.ignore()
+            self.main_window.hide()
+            self.tray.show_notification(
+                "LiveCaptionArchiver",
+                "Minimizado para a bandeja. Clique duplo para abrir."
+            )
+        else:
+            event.accept()
 
     def _connect_signals(self):
         # UI -> Worker (Controles)
@@ -198,6 +246,8 @@ class LiveCaptionApp:
             return
 
         self.ocr_worker.start()
+        if hasattr(self, 'tray'):
+            self.tray.update_recording_state(True)
         if self.usage_logger:
             self.usage_logger.log_event("RECORDING_STARTED", "Gravação iniciada", {
                 "timeout_ms": config.get('timeout_ms'),
@@ -208,6 +258,8 @@ class LiveCaptionApp:
     def on_stop_requested(self):
         """Chamado quando usuário para a gravação."""
         self.ocr_worker.stop()
+        if hasattr(self, 'tray'):
+            self.tray.update_recording_state(False)
         if self.usage_logger:
             self.usage_logger.log_event("RECORDING_STOPPED", "Gravação parada")
 
@@ -353,7 +405,9 @@ class LiveCaptionApp:
         try:
             sys.exit(self.app.exec())
         finally:
-            # Garante que o logger seja fechado ao encerrar
+            # Garante limpeza
+            if hasattr(self, 'tray') and self.tray:
+                self.tray.hide()
             if hasattr(self, 'usage_logger') and self.usage_logger:
                 self.usage_logger.close()
             if hasattr(self, 'file_manager') and self.file_manager:

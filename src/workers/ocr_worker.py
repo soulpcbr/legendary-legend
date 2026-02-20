@@ -28,8 +28,37 @@ class OCRWorker(QThread):
 
         # EasyOCR Reader
         self.reader = None
-        self.gpu = False # Forçar CPU para compatibilidade
+        self.gpu = self._detect_gpu()
+        self.force_cpu = False
         self.languages = ['pt', 'en']
+
+    @staticmethod
+    def _detect_gpu():
+        """Auto-detecta se há GPU CUDA disponível."""
+        try:
+            import torch
+            available = torch.cuda.is_available()
+            if available:
+                device_name = torch.cuda.get_device_name(0)
+                print(f"[GPU] CUDA disponível: {device_name}")
+            return available
+        except ImportError:
+            print("[GPU] PyTorch não instalado, usando CPU")
+            return False
+        except Exception:
+            return False
+
+    def set_languages(self, languages):
+        """Define idiomas do OCR. Requer reinicializar o reader."""
+        with QMutexLocker(self._mutex):
+            self.languages = languages
+            self.reader = None  # Força reinicialização
+
+    def set_gpu_mode(self, use_gpu):
+        """Define se deve usar GPU ou CPU."""
+        with QMutexLocker(self._mutex):
+            self.force_cpu = not use_gpu
+            self.reader = None  # Força reinicialização
 
     def set_region(self, x, y, w, h):
         with QMutexLocker(self._mutex):
@@ -56,12 +85,11 @@ class OCRWorker(QThread):
     def _check_task(self):
         try:
             import easyocr
-            # Tenta carregar sem download. Se falhar, é porque não tem os modelos.
-            # verbose=False para menos logs
-            self.reader = easyocr.Reader(self.languages, gpu=self.gpu, download_enabled=False, verbose=False)
-            self.dependency_status.emit(True, "Modelos carregados.")
+            use_gpu = self.gpu and not self.force_cpu
+            self.reader = easyocr.Reader(self.languages, gpu=use_gpu, download_enabled=False, verbose=False)
+            gpu_str = "GPU" if use_gpu else "CPU"
+            self.dependency_status.emit(True, f"Modelos carregados ({gpu_str}).")
         except Exception as e:
-            # Provavelmente modelos faltando
             print(f"Check failed: {e}")
             self.dependency_status.emit(False, "Modelos de OCR não encontrados.")
 
@@ -75,9 +103,10 @@ class OCRWorker(QThread):
     def _install_task(self):
         try:
             import easyocr
-            # Com download_enabled=True, ele baixa se faltar
-            self.reader = easyocr.Reader(self.languages, gpu=self.gpu, download_enabled=True, verbose=True)
-            self.dependency_status.emit(True, "Modelos instalados com sucesso!")
+            use_gpu = self.gpu and not self.force_cpu
+            self.reader = easyocr.Reader(self.languages, gpu=use_gpu, download_enabled=True, verbose=True)
+            gpu_str = "GPU" if use_gpu else "CPU"
+            self.dependency_status.emit(True, f"Modelos instalados com sucesso ({gpu_str})!")
         except Exception as e:
             self.error_occurred.emit("Erro na Instalação", f"Falha ao baixar modelos: {str(e)}")
             self.dependency_status.emit(False, f"Erro: {str(e)}")

@@ -186,33 +186,49 @@ class CaptionStabilizer:
         
         self.last_text_hash = text_hash
 
-        # Verifica repetição antes de processar (melhorado)
-        repetition_info = self._is_repetition(raw_text)
-        if repetition_info['is_repetition']:
-            self.repetition_count += 1
-            self.consecutive_repetition_count += 1
-            
-            similarity = repetition_info.get('similarity', 0)
-            matched = repetition_info.get('matched_text', '')[:30]
-            if self.debug_log_callback:
-                self.debug_log_callback(f"[REPETIÇÃO] Ignorado (sim: {similarity:.2f}, consec: {self.consecutive_repetition_count}): {raw_text[:40]}...")
-            
-            if self.usage_logger:
-                self.usage_logger.log_decision("REPETITION_DETECTED", "Texto repetido ignorado", {
-                    "text_preview": raw_text[:50],
-                    "repetition_count": self.repetition_count,
-                    "consecutive_repetitions": self.consecutive_repetition_count,
-                    "similarity": similarity,
-                    "matched_text": repetition_info.get('matched_text', '')[:50]
-                })
-            
-            # Se muitas repetições consecutivas, força ajuste agressivo
-            if self.consecutive_repetition_count >= 3 and self.is_auto_smart_adjust:
+        # Verifica se o texto é expansão/correção do buffer atual ANTES de checar repetição.
+        # Isso evita falsos positivos: "Ola" → "Ola tudo" não é repetição, é construção.
+        is_expanding_buffer = False
+        if self.current_buffer:
+            # Texto contém o buffer atual (expansão direta)
+            if self.current_buffer in raw_text:
+                is_expanding_buffer = True
+            else:
+                # Verifica similaridade com buffer atual
+                matcher = difflib.SequenceMatcher(None, self.current_buffer, raw_text)
+                buffer_similarity = matcher.ratio()
+                if buffer_similarity > self.similarity_threshold:
+                    is_expanding_buffer = True
+
+        # Verifica repetição APENAS se NÃO for expansão do buffer atual.
+        # Se for expansão, é a mesma frase sendo construída, não repetição.
+        if not is_expanding_buffer:
+            repetition_info = self._is_repetition(raw_text)
+            if repetition_info['is_repetition']:
+                self.repetition_count += 1
+                self.consecutive_repetition_count += 1
+                
+                similarity = repetition_info.get('similarity', 0)
+                matched = repetition_info.get('matched_text', '')[:30]
                 if self.debug_log_callback:
-                    self.debug_log_callback(f"[ALERTA] {self.consecutive_repetition_count} repetições consecutivas! Ajuste agressivo ativado.")
-                self._aggressive_adjust_for_repetitions()
-            
-            return  # Ignora texto repetido
+                    self.debug_log_callback(f"[REPETIÇÃO] Ignorado (sim: {similarity:.2f}, consec: {self.consecutive_repetition_count}): {raw_text[:40]}...")
+                
+                if self.usage_logger:
+                    self.usage_logger.log_decision("REPETITION_DETECTED", "Texto repetido ignorado", {
+                        "text_preview": raw_text[:50],
+                        "repetition_count": self.repetition_count,
+                        "consecutive_repetitions": self.consecutive_repetition_count,
+                        "similarity": similarity,
+                        "matched_text": repetition_info.get('matched_text', '')[:50]
+                    })
+                
+                # Se muitas repetições consecutivas, força ajuste agressivo
+                if self.consecutive_repetition_count >= 3 and self.is_auto_smart_adjust:
+                    if self.debug_log_callback:
+                        self.debug_log_callback(f"[ALERTA] {self.consecutive_repetition_count} repetições consecutivas! Ajuste agressivo ativado.")
+                    self._aggressive_adjust_for_repetitions()
+                
+                return  # Ignora texto repetido
         
         # Reset contador de repetições consecutivas se não for repetição
         self.consecutive_repetition_count = 0

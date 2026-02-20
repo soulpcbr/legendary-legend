@@ -1,8 +1,10 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QTextEdit, QLabel, QSpinBox, QCheckBox,
-                             QGroupBox, QStatusBar, QMessageBox)
+                             QGroupBox, QStatusBar, QMessageBox, QProgressBar)
 from PyQt6.QtCore import pyqtSignal, Qt, pyqtSlot, QTimer
+from PyQt6.QtGui import QAction
 from src.ui.overlay import OverlaySelector
+from src.ui.theme import get_stylesheet
 from src import __version__
 
 class MainWindow(QMainWindow):
@@ -20,12 +22,15 @@ class MainWindow(QMainWindow):
         super().__init__()
         version = __version__.get_version()
         self.setWindowTitle(f"LiveCaptionArchiver v{version}")
-        self.resize(850, 650)  # Tamanho aumentado para caber todos os elementos e explicações
-        self.setMinimumSize(750, 600)
+        self.resize(900, 700)
+        self.setMinimumSize(800, 600)
 
         self.is_recording = False
         self.capture_region = None # (x, y, w, h)
         self.dependencies_ready = False  # Rastreia se as dependências estão prontas
+
+        # Aplica tema dark
+        self.setStyleSheet(get_stylesheet())
 
         # UI Components
         self.init_ui()
@@ -43,50 +48,59 @@ class MainWindow(QMainWindow):
         controls_layout = QHBoxLayout()
         controls_layout.setSpacing(5)  # Espaçamento entre botões
 
-        self.btn_select_region = QPushButton("Selecionar Região")
+        self.btn_select_region = QPushButton("⬚  Selecionar Região")
+        self.btn_select_region.setObjectName("btn_select_region")
         self.btn_select_region.clicked.connect(self.open_overlay)
-        self.btn_select_region.setMinimumWidth(120)
+        self.btn_select_region.setMinimumWidth(140)
         controls_layout.addWidget(self.btn_select_region)
 
         # Botão de Salvar Seleção
-        self.btn_save_region = QPushButton("Salvar Seleção")
+        self.btn_save_region = QPushButton("💾  Salvar Seleção")
+        self.btn_save_region.setObjectName("btn_save_region")
         self.btn_save_region.clicked.connect(self.save_current_region)
-        self.btn_save_region.setEnabled(False)  # Só habilita se houver região selecionada ou overlay aberto
-        self.btn_save_region.setStyleSheet("background-color: #fff4cc; color: darkorange; font-weight: bold;")
+        self.btn_save_region.setEnabled(False)
         self.btn_save_region.setToolTip("Confirma a seleção no overlay (como ENTER) ou salva a região atual")
-        self.btn_save_region.setMinimumWidth(120)
+        self.btn_save_region.setMinimumWidth(140)
         controls_layout.addWidget(self.btn_save_region)
 
-        self.btn_record = QPushButton("Iniciar Gravação")
+        self.btn_record = QPushButton("⏺  Iniciar Gravação")
+        self.btn_record.setObjectName("btn_record")
         self.btn_record.setCheckable(True)
         self.btn_record.clicked.connect(self.toggle_recording)
-        self.btn_record.setEnabled(False) # Só habilita após selecionar região
-        self.btn_record.setMinimumWidth(130)
+        self.btn_record.setEnabled(False)
+        self.btn_record.setMinimumWidth(160)
         controls_layout.addWidget(self.btn_record)
 
         # Botão de Abrir Pasta de Logs
-        self.btn_open_logs = QPushButton("Abrir Logs")
+        self.btn_open_logs = QPushButton("📂  Abrir Logs")
+        self.btn_open_logs.setObjectName("btn_open_logs")
         self.btn_open_logs.clicked.connect(self.open_log_folder)
-        self.btn_open_logs.setStyleSheet("background-color: #e6f3ff; color: darkblue; font-weight: bold;")
-        self.btn_open_logs.setMinimumWidth(100)
+        self.btn_open_logs.setMinimumWidth(120)
         controls_layout.addWidget(self.btn_open_logs)
 
         # Botão de Limpar Captions
-        self.btn_clear_captions = QPushButton("Limpar Captions")
+        self.btn_clear_captions = QPushButton("🗑  Limpar Captions")
+        self.btn_clear_captions.setObjectName("btn_clear_captions")
         self.btn_clear_captions.clicked.connect(self.clear_captions_requested.emit)
-        self.btn_clear_captions.setStyleSheet("background-color: #ffe6e6; color: darkred; font-weight: bold;")
-        self.btn_clear_captions.setMinimumWidth(120)
+        self.btn_clear_captions.setMinimumWidth(140)
         self.btn_clear_captions.setToolTip("Remove todos os arquivos de captions (atual e históricos)")
         controls_layout.addWidget(self.btn_clear_captions)
 
-        controls_layout.addStretch()  # Adiciona espaço flexível à direita
+        controls_layout.addStretch()
 
         # Botão de Instalação (Inicialmente Oculto)
-        self.btn_install = QPushButton("Instalar Dependências")
-        self.btn_install.setStyleSheet("background-color: #e6ffcc; color: darkgreen; font-weight: bold;")
+        self.btn_install = QPushButton("⬇  Instalar Dependências")
+        self.btn_install.setObjectName("btn_install")
         self.btn_install.setVisible(False)
         self.btn_install.clicked.connect(self.install_requested.emit)
         controls_layout.addWidget(self.btn_install)
+
+        # Progress bar para download (inicialmente oculta)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat("Baixando modelos... %p%")
+        layout.addWidget(self.progress_bar)
 
         layout.addLayout(controls_layout)
 
@@ -135,10 +149,21 @@ class MainWindow(QMainWindow):
         config_group.setLayout(config_layout)
         layout.addWidget(config_group)
 
-        # --- Configurações Avançadas (Jitter) ---
-        advanced_group = QGroupBox("Configurações Avançadas")
+        # --- Configurações Avançadas (Colapsável) ---
+        advanced_header_layout = QHBoxLayout()
+        self.btn_toggle_advanced = QPushButton("▶  Configurações Avançadas")
+        self.btn_toggle_advanced.setObjectName("btn_toggle_advanced")
+        self.btn_toggle_advanced.clicked.connect(self._toggle_advanced_settings)
+        self.btn_toggle_advanced.setMinimumWidth(220)
+        advanced_header_layout.addWidget(self.btn_toggle_advanced)
+        advanced_header_layout.addStretch()
+        layout.addLayout(advanced_header_layout)
+
+        # Container colapsável
+        self.advanced_container = QWidget()
+        advanced_group = QGroupBox("")
         advanced_layout = QVBoxLayout()
-        advanced_layout.setSpacing(10)  # Espaçamento entre elementos
+        advanced_layout.setSpacing(10)
 
         # Threshold de Similaridade
         similarity_layout = QHBoxLayout()
@@ -265,7 +290,11 @@ class MainWindow(QMainWindow):
         advanced_layout.addLayout(smart_adjust_layout)
 
         advanced_group.setLayout(advanced_layout)
-        layout.addWidget(advanced_group)
+        advanced_container_layout = QVBoxLayout(self.advanced_container)
+        advanced_container_layout.setContentsMargins(0, 0, 0, 0)
+        advanced_container_layout.addWidget(advanced_group)
+        self.advanced_container.setVisible(False)  # Inicia colapsado
+        layout.addWidget(self.advanced_container)
 
         # --- Logs Separados ---
         logs_layout = QHBoxLayout()
@@ -363,20 +392,27 @@ class MainWindow(QMainWindow):
         # Persiste automaticamente quando selecionada via overlay
         self.region_saved.emit(x, y, w, h)
 
+    def _toggle_advanced_settings(self):
+        """Mostra/esconde as configurações avançadas."""
+        is_visible = self.advanced_container.isVisible()
+        self.advanced_container.setVisible(not is_visible)
+        if is_visible:
+            self.btn_toggle_advanced.setText("▶  Configurações Avançadas")
+        else:
+            self.btn_toggle_advanced.setText("▼  Configurações Avançadas")
+
     def toggle_recording(self):
         if self.btn_record.isChecked():
             # Iniciar
             self.is_recording = True
-            self.btn_record.setText("Parar Gravação")
-            self.btn_record.setStyleSheet("background-color: #ffcccc; color: red;")
+            self.btn_record.setText("⏹  Parar Gravação")
             self.btn_select_region.setEnabled(False)
             self.start_requested.emit(self.get_current_config())
-            self.status_bar.showMessage("Gravando...")
+            self.status_bar.showMessage("⏺ Gravando...")
         else:
             # Parar
             self.is_recording = False
-            self.btn_record.setText("Iniciar Gravação")
-            self.btn_record.setStyleSheet("")
+            self.btn_record.setText("⏺  Iniciar Gravação")
             self.btn_select_region.setEnabled(True)
             self.stop_requested.emit()
             self.status_bar.showMessage("Parado.")
@@ -486,7 +522,8 @@ class MainWindow(QMainWindow):
     def open_log_folder(self):
         """Abre a pasta onde os logs são salvos."""
         import os
-        log_dir = "captions"
+        from src.utils.paths import get_captions_dir
+        log_dir = get_captions_dir()
         if os.path.exists(log_dir):
             os.startfile(log_dir)
         else:

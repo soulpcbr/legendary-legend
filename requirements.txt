@@ -1,6 +1,6 @@
+# Dependências de runtime do LiveCaptionArchiver
 PyQt6
 easyocr
 mss
 opencv-python
 numpy
-pyinstaller

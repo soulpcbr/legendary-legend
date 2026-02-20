@@ -65,14 +65,22 @@ class OverlaySelector(QWidget):
             self.close()
 
     def confirm_selection(self):
-        # Emite coordenadas relativas à tela
-        # Cuidado com DPI scaling, mas mss geralmente lida bem com pixels físicos se configurado.
-        # PyQt geometry() retorna coordenadas lógicas.
-        # Para mss, precisamos garantir que bate.
-        # Em muitos casos PyQt coordinates == Pixels se escala for 100%.
-        # Se houver scaling, pode haver offset. Vamos assumir 1:1 por enquanto.
+        # Emite coordenadas relativas à tela, corrigidas para DPI scaling.
+        # PyQt geometry() retorna coordenadas lógicas. Para mss (que usa pixels físicos),
+        # precisamos multiplicar pelo devicePixelRatio da tela.
         g = self.geometry()
-        self.area_selected.emit(g.x(), g.y(), g.width(), g.height())
+        
+        # Obtém o fator de escala DPI da tela onde o widget está
+        screen = self.screen()
+        dpr = screen.devicePixelRatio() if screen else 1.0
+        
+        # Converte coordenadas lógicas para pixels físicos (para mss)
+        phys_x = int(g.x() * dpr)
+        phys_y = int(g.y() * dpr)
+        phys_w = int(g.width() * dpr)
+        phys_h = int(g.height() * dpr)
+        
+        self.area_selected.emit(phys_x, phys_y, phys_w, phys_h)
         self.hide()
 
     def paintEvent(self, event):

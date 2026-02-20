@@ -1,27 +1,35 @@
 import json
 import os
+from src.utils.paths import get_settings_path
 
 class SettingsManager:
     """Gerencia persistência de configurações do usuário em JSON."""
     
-    def __init__(self, settings_file="user_settings.json"):
+    def __init__(self, settings_file=None):
         """
-        :param settings_file: Nome do arquivo de configurações (padrão: user_settings.json)
+        :param settings_file: Caminho do arquivo de configurações (padrão: auto-detectado via paths.py)
         """
-        self.settings_file = settings_file
+        self.settings_file = settings_file or get_settings_path()
         self.settings = self._load_settings()
     
     def _load_settings(self):
-        """Carrega configurações do arquivo JSON, retorna dict vazio se não existir."""
+        """Carrega configurações do arquivo JSON, mesclando com defaults para garantir campos novos."""
+        defaults = self._get_default_settings()
+        
         if not os.path.exists(self.settings_file):
-            return self._get_default_settings()
+            return defaults
         
         try:
             with open(self.settings_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                saved = json.load(f)
+            
+            # Mescla: defaults como base, sobrescreve com valores salvos
+            # Isso garante que novos campos (ex: ocr_languages) existam em settings antigos
+            merged = {**defaults, **saved}
+            return merged
         except Exception as e:
             print(f"Erro ao carregar configurações: {e}")
-            return self._get_default_settings()
+            return defaults
     
     def _get_default_settings(self):
         """Retorna configurações padrão."""
@@ -36,7 +44,10 @@ class SettingsManager:
             "auto_smart_adjust": False,
             "jitter_detection_threshold": 50,
             "stability_detection_threshold": 20,
-            "repetition_threshold": 0.8
+            "repetition_threshold": 0.8,
+            "ocr_languages": ["pt", "en"],
+            "use_gpu": True,
+            "preset": "custom"
         }
     
     def save_settings(self):

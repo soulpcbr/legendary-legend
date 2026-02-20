@@ -1,6 +1,7 @@
 import os
 import datetime
 import json
+from src.utils.paths import get_logs_dir
 
 class UsageLogger:
     """
@@ -11,12 +12,12 @@ class UsageLogger:
     - Mudanças de parâmetros
     """
     
-    def __init__(self, log_dir="logs", max_file_size=10 * 1024 * 1024):  # 10MB
+    def __init__(self, log_dir=None, max_file_size=10 * 1024 * 1024):  # 10MB
         """
-        :param log_dir: Diretório onde os logs serão salvos
+        :param log_dir: Diretório onde os logs serão salvos (padrão: auto-detectado via paths.py)
         :param max_file_size: Tamanho máximo do arquivo em bytes (padrão: 10MB)
         """
-        self.log_dir = log_dir
+        self.log_dir = log_dir or get_logs_dir()
         self.MAX_FILE_SIZE = max_file_size
         self.file_counter = 1
         

@@ -45,7 +45,7 @@ class TestCaptionStabilizer(unittest.TestCase):
         # Habilita auto timeout
         self.stabilizer.set_auto_timeout(True)
         # Reduz intervalo de recalculo para teste
-        self.stabilizer.recalc_interval = 0.1
+        self.stabilizer.auto_recalc_interval = 0.1
 
         # Popula o deque com intervalos simulados
         # Simula delay de 100ms entre palavras
@@ -54,7 +54,7 @@ class TestCaptionStabilizer(unittest.TestCase):
 
         # Força recalculo
         time.sleep(0.2)
-        self.stabilizer._recalculate_timeout_if_needed(time.time())
+        self.stabilizer._recalculate_if_needed(time.time())
 
         # Média = 100. Stdev = 0.
         # Fórmula: Avg + 3*Stdev + 500 = 100 + 0 + 500 = 600
