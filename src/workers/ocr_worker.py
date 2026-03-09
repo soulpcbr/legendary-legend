@@ -122,43 +122,51 @@ class OCRWorker(QThread):
             self.error_occurred.emit("Erro Interno", "Reader OCR não inicializado.")
             return
 
-        while self._is_running:
-            start_time = time.time()
+        try:
+            while self._is_running:
+                start_time = time.time()
 
-            # Captura Região com Thread Safety na leitura da config
-            with QMutexLocker(self._mutex):
-                region = self.region
-                invert = self.invert_colors
+                # Captura Região com Thread Safety na leitura da config
+                with QMutexLocker(self._mutex):
+                    region = self.region
+                    invert = self.invert_colors
 
-            if not region:
-                time.sleep(0.1)
-                continue
+                if not region:
+                    time.sleep(0.1)
+                    continue
 
-            try:
-                # 1. Screen Capture (mss)
-                sct_img = self.sct.grab(region)
-                img = np.array(sct_img)
+                try:
+                    # 1. Screen Capture (mss)
+                    sct_img = self.sct.grab(region)
+                    img = np.array(sct_img)
 
-                # 2. Image Processing
-                # Converte para grayscale se necessário e aplica filtros
-                processed_img = process_image_for_ocr(img, invert=invert)
+                    # 2. Image Processing
+                    # Converte para grayscale se necessário e aplica filtros
+                    processed_img = process_image_for_ocr(img, invert=invert)
 
-                # 3. OCR com EasyOCR
-                # detail=0 retorna apenas lista de textos
-                # paragraph=True tenta combinar linhas
-                results = self.reader.readtext(processed_img, detail=0, paragraph=True)
+                    # 3. OCR com EasyOCR
+                    # detail=0 retorna apenas lista de textos
+                    # paragraph=True tenta combinar linhas
+                    results = self.reader.readtext(processed_img, detail=0, paragraph=True)
 
-                # Junta resultados em uma string única
-                text = " ".join(results).strip()
+                    # Junta resultados em uma string única
+                    text = " ".join(results).strip()
 
-                if text:
-                    self.text_detected.emit(text)
+                    if text:
+                        self.text_detected.emit(text)
 
-            except Exception as e:
-                print(f"Erro no loop OCR: {e}")
+                except Exception as e:
+                    print(f"Erro no loop OCR: {e}")
 
-            # Controle de taxa de quadros
-            # EasyOCR é mais pesado que Tesseract, então talvez demore mais que 200ms
-            elapsed = time.time() - start_time
-            if elapsed < 0.2:
-                time.sleep(0.2 - elapsed)
+                # Controle de taxa de quadros
+                # EasyOCR é mais pesado que Tesseract, então talvez demore mais que 200ms
+                elapsed = time.time() - start_time
+                if elapsed < 0.2:
+                    time.sleep(0.2 - elapsed)
+                else:
+                    # Evita que a thread consuma 100% da CPU contínua se o OCR estiver lerdo
+                    time.sleep(0.01)
+        finally:
+            if self.sct:
+                self.sct.close()
+                self.sct = None

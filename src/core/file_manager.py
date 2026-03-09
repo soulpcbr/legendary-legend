@@ -4,19 +4,30 @@ import glob
 from src.utils.paths import get_captions_dir
 
 class FileManager:
-    MAX_FILES = 5  # 1 atual + 4 históricos
     CURRENT_FILE = "captions_current.txt"
     
-    def __init__(self, output_dir=None):
+    def __init__(self, output_dir=None, max_files=5, max_size_mb=2):
         """
         Gerencia a escrita de legendas em arquivo.
         Mantém apenas 5 arquivos (1 atual + 4 históricos).
         Não cria novo arquivo a cada inicialização - reutiliza o arquivo atual.
         Rola automaticamente para novo arquivo quando atinge 2MB.
         """
-        self.output_dir = output_dir or get_captions_dir()
-        self.MAX_FILE_SIZE = 2 * 1024 * 1024  # 2MB
+        self.max_files = max_files
+        self.max_file_size = max_size_mb * 1024 * 1024
+        self.file = None
+        self.set_output_dir(output_dir or get_captions_dir())
         
+    def update_rotation_config(self, max_files, max_size_mb):
+        self.max_files = max_files
+        self.max_file_size = max_size_mb * 1024 * 1024
+
+        
+    def set_output_dir(self, new_dir):
+        if self.file:
+            self.file.close()
+        
+        self.output_dir = new_dir
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
@@ -42,7 +53,7 @@ class FileManager:
                 return
             
             current_size = os.path.getsize(self.filepath)
-            if current_size >= self.MAX_FILE_SIZE:
+            if current_size >= self.max_file_size:
                 print(f"Arquivo atingiu {current_size / (1024*1024):.2f}MB. Rotacionando...")
                 
                 # Fecha o arquivo atual
@@ -51,24 +62,22 @@ class FileManager:
                 # Obtém arquivos históricos existentes
                 historical_files = self._get_historical_files()
                 
-                # Se já temos 4 históricos, remove o mais antigo
-                if len(historical_files) >= (self.MAX_FILES - 1):
+                # Se já temos históricos máximos, remove os mais antigos
+                while len(historical_files) >= max(1, self.max_files - 1):
                     oldest_file = historical_files[0]
                     try:
                         os.remove(oldest_file)
-                        print(f"Arquivo histórico mais antigo removido: {oldest_file}")
+                        print(f"Arquivo histórico antigo removido: {oldest_file}")
                     except Exception as e:
                         print(f"Erro ao remover arquivo histórico: {e}")
                     # Remove da lista para não contar
                     historical_files = historical_files[1:]
                 
                 # Renomeia o arquivo atual para histórico
-                # Encontra o próximo número disponível (1 a 4)
-                # Se já temos 4 históricos, o mais antigo foi removido, então temos espaço
+                # Encontra o próximo número disponível 
                 next_hist_num = len(historical_files) + 1
-                # Garante que não exceda 4
-                if next_hist_num > (self.MAX_FILES - 1):
-                    next_hist_num = (self.MAX_FILES - 1)
+                if next_hist_num > max(1, self.max_files - 1):
+                    next_hist_num = max(1, self.max_files - 1)
                 
                 new_hist_path = os.path.join(self.output_dir, f"captions_hist{next_hist_num}.txt")
                 
@@ -230,6 +239,54 @@ class FileManager:
         except Exception as e:
             print(f"Erro ao exportar VTT: {e}")
             return None
+
+    def generate_summary(self):
+        """
+        Lê todos os arquivos de legendas, extrai palavras únicas e salva em 'sumario.txt'.
+        Retorna uma tupla (caminho_do_arquivo, quantidade_de_palavras, data_hora_criacao).
+        """
+        import re
+        unique_words = set()
+        
+        # Otimização: pré-compilar regexes
+        timestamp_re = re.compile(r'\[\d{2}:\d{2}:\d{2}\]')
+        words_re = re.compile(r'\b[\w\u00C0-\u017F]+\b', flags=re.UNICODE)
+
+        # Coleta todos os arquivos (históricos + atual)
+        target_files = self._get_historical_files()
+        if os.path.exists(self.filepath):
+            target_files.append(self.filepath)
+            
+        for file_path in target_files:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        # Remove a tag de tempo "[HH:MM:SS]"
+                        text = timestamp_re.sub('', line).strip()
+                        # Extrai as palavras em letras minúsculas
+                        words = words_re.findall(text.lower())
+                        
+                        # Remove termos que são apenas números
+                        for word in words:
+                            if not word.isdigit():
+                                unique_words.add(word)
+            except Exception as e:
+                print(f"Erro ao ler arquivo para sumário {file_path}: {e}")
+                
+        # Ordena alfabeticamente
+        sorted_words = sorted(list(unique_words))
+        
+        summary_path = os.path.join(self.output_dir, "sumario.txt")
+        try:
+            with open(summary_path, 'w', encoding='utf-8') as f:
+                for word in sorted_words:
+                    f.write(f"{word}\n")
+        except Exception as e:
+            print(f"Erro ao salvar sumário: {e}")
+            return None, 0, None
+            
+        timestamp = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        return summary_path, len(sorted_words), timestamp
 
     def close(self):
         """Fecha o arquivo com segurança."""

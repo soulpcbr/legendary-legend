@@ -30,7 +30,11 @@ class LiveCaptionApp:
         self.usage_logger.log_event("APP_START", "Aplicativo iniciado")
 
         # 1. Model
-        self.file_manager = FileManager()
+        self.file_manager = FileManager(
+            output_dir=self.settings.get('custom_output_dir', None),
+            max_files=self.settings.get('max_log_files', 5),
+            max_size_mb=self.settings.get('max_log_size_mb', 2)
+        )
         
         # Carrega configurações salvas para o Stabilizer
         stabilizer_config = {
@@ -124,14 +128,20 @@ class LiveCaptionApp:
 
         # Dependency Handling
         self.main_window.install_requested.connect(self.on_install_requested)
+        self.main_window.verify_system_requested.connect(self.on_verify_system_requested)
+        self.main_window.repair_system_requested.connect(self.on_repair_system_requested)
         
-        # Clear Captions
+        # Clear Captions & Custom Dir & Open Folder
         self.main_window.clear_captions_requested.connect(self.on_clear_captions_requested)
+        self.main_window.custom_dir_changed.connect(self.on_custom_dir_changed)
+        self.main_window.open_folder_requested.connect(self.on_open_folder_requested)
+        self.main_window.generate_summary_requested.connect(self.on_generate_summary_requested)
 
         # Worker -> UI (Erros e Status)
         self.ocr_worker.error_occurred.connect(self.on_worker_error)
         self.ocr_worker.dependency_status.connect(self.on_dependency_status)
-        self.ocr_worker.installation_progress.connect(self.main_window.update_status)
+        self.ocr_worker.installation_progress.connect(self.on_installation_progress)
+
 
         # Worker -> Model (Fluxo de dados)
         self.ocr_worker.text_detected.connect(self.on_text_detected)
@@ -194,7 +204,9 @@ class LiveCaptionApp:
             'auto_smart_adjust': config.get('auto_smart_adjust', False),
             'jitter_detection_threshold': config.get('jitter_detection_threshold', 50),
             'stability_detection_threshold': config.get('stability_detection_threshold', 20),
-            'repetition_threshold': config.get('repetition_threshold', 0.8)
+            'repetition_threshold': config.get('repetition_threshold', 0.8),
+            'max_log_files': config.get('max_log_files', 5),
+            'max_log_size_mb': config.get('max_log_size_mb', 2)
         }
         self.settings.set_multiple(settings_to_save)
         
@@ -208,8 +220,16 @@ class LiveCaptionApp:
     def on_install_requested(self):
         self.main_window.set_installing_state()
         self.ocr_worker.install_dependencies()
+        
+    def on_installation_progress(self, message):
+        self.main_window.update_status(message)
+        if hasattr(self.main_window, 'add_diagnostic_item'):
+            self.main_window.add_diagnostic_item(f"⏳ Processo: {message}", is_ok=False, pending=True)
 
     def on_dependency_status(self, is_ready, message):
+        if hasattr(self.main_window, 'add_diagnostic_item'):
+            self.main_window.add_diagnostic_item(message, is_ok=is_ready, pending=False)
+            
         if is_ready:
             self.main_window.set_ready_state()
             self.main_window.update_status(message)
@@ -232,6 +252,40 @@ class LiveCaptionApp:
             # Só mostra popup se for uma mensagem de erro real vinda da instalação
             if "Erro" in message:
                 self.main_window.show_error("Erro de Dependência", message)
+
+    def on_verify_system_requested(self):
+        """Verifica o estado da pasta e dos modelos, montando log visual na nova tab."""
+        self.main_window.clear_diagnostics()
+        self.main_window.add_diagnostic_item("Iniciando Diagnóstico Principal...", is_ok=True)
+        
+        log_dir = self.file_manager.output_dir
+        import os
+        if os.path.exists(log_dir):
+            self.main_window.add_diagnostic_item(f"Pasta de Transcrições: {log_dir} (OK)", is_ok=True)
+        else:
+            self.main_window.add_diagnostic_item(f"Pasta de Transcrições: Ausente ou Sem Permissão ({log_dir})", is_ok=False)
+
+        self.main_window.add_diagnostic_item("Disparando rotinas de verificação do Modelo OCR...", pending=True)
+        self.ocr_worker.check_dependencies()
+
+    def on_repair_system_requested(self):
+        """Corrige a pasta se faltar e começa baixar os modelos."""
+        self.main_window.clear_diagnostics()
+        self.main_window.add_diagnostic_item("Solicitando Intervenção e Reparo de Sistema...", pending=True)
+        
+        log_dir = self.file_manager.output_dir
+        import os
+        if not os.path.exists(log_dir):
+            try:
+                os.makedirs(log_dir)
+                self.main_window.add_diagnostic_item("Pasta de Transcrições regenerada e fixada.", is_ok=True)
+            except Exception as e:
+                self.main_window.add_diagnostic_item(f"Falha de permissão para criar pasta: {e}", is_ok=False)
+        else:
+            self.main_window.add_diagnostic_item("Avaliador: Pasta em estado íntegro. Nada feito.", is_ok=True)
+
+        self.main_window.add_diagnostic_item("Forçando Re-Download ou compilação de Modelos de OCR...", pending=True)
+        self.on_install_requested()
 
     def on_start_requested(self, config):
         # Aplica configurações iniciais antes de começar
@@ -292,6 +346,10 @@ class LiveCaptionApp:
         
         if jitter_params:
             self.stabilizer.set_jitter_parameters(jitter_params)
+            
+        # Atualiza o arquivo de log rotativo
+        if 'max_log_files' in config and 'max_log_size_mb' in config:
+            self.file_manager.update_rotation_config(config['max_log_files'], config['max_log_size_mb'])
 
     def on_text_detected(self, text):
         if self.usage_logger:
@@ -387,6 +445,35 @@ class LiveCaptionApp:
                     "Ocorreu um erro ao tentar limpar os arquivos de captions."
                 )
     
+    def on_custom_dir_changed(self, new_dir):
+        """Chamado quando usuário seleciona nova pasta salvamento."""
+        self.settings.set('custom_output_dir', new_dir)
+        self.file_manager.set_output_dir(new_dir)
+        if hasattr(self.main_window, 'append_debug_log'):
+            self.main_window.append_debug_log(f"[INFO] Pasta alterada: {new_dir}")
+            
+    def on_open_folder_requested(self):
+        """Abre a diretório de textos atual definidos no FileManager"""
+        import os
+        log_dir = self.file_manager.output_dir
+        if os.path.exists(log_dir):
+            os.startfile(log_dir)
+        else:
+            QMessageBox.warning(self.main_window, "Pasta Não Encontrada", f"A pasta de textos não existe: {log_dir}")
+            
+    def on_generate_summary_requested(self):
+        """Gera o sumário e atualiza a interface."""
+        summary_path, word_count, timestamp = self.file_manager.generate_summary()
+        
+        if summary_path and word_count > 0:
+            self.main_window.update_summary_info(f"Sumário de {word_count} palavras gerado em {timestamp}")
+            if hasattr(self.main_window, 'append_debug_log'):
+                self.main_window.append_debug_log(f"[INFO] Sumário. Palavras únicas: {word_count}. Arquivo salvo.")
+        elif summary_path is None:
+            self.main_window.update_summary_info("Erro ao gerar o sumário!")
+        else:
+            self.main_window.update_summary_info("Nenhuma palavra extraída (histórico vazio).")
+            
     def on_debug_log(self, message):
         """Chamado quando há uma mensagem de debug para exibir."""
         self.main_window.append_debug_log(message)

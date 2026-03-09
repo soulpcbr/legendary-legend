@@ -258,7 +258,38 @@ def get_stylesheet():
         border-radius: 5px;
     }}
 
-    /* ===== MENU BAR ===== */
+    /* ===== TABS ===== */
+    QTabWidget::pane {{
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        background-color: {c['bg_secondary']};
+        padding: 5px;
+    }}
+    
+    QTabBar::tab {{
+        background-color: {c['bg_tertiary']};
+        color: {c['text_secondary']};
+        border: 1px solid {c['border']};
+        border-bottom-color: {c['border']}; /* mesmo fundo */
+        border-top-left-radius: 6px;
+        border-top-right-radius: 6px;
+        min-width: 8ex;
+        padding: 10px 20px;
+        margin-right: 2px;
+        font-weight: bold;
+    }}
+    
+    QTabBar::tab:selected, QTabBar::tab:hover {{
+        background-color: {c['bg_secondary']};
+        color: {c['accent_light']};
+    }}
+    
+    QTabBar::tab:selected {{
+        border-color: {c['border']};
+        border-bottom-color: {c['bg_secondary']}; /* cria efeito colado no corpo */
+    }}
+
+    /* ===== PROGRESS BAR ===== */
     QMenuBar {{
         background-color: {c['bg_secondary']};
         color: {c['text_primary']};

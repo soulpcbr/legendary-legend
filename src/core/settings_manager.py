@@ -47,17 +47,28 @@ class SettingsManager:
             "repetition_threshold": 0.8,
             "ocr_languages": ["pt", "en"],
             "use_gpu": True,
+            "custom_output_dir": None,
+            "max_log_files": 5,
+            "max_log_size_mb": 2,
             "preset": "custom"
         }
     
     def save_settings(self):
-        """Salva configurações atuais no arquivo JSON."""
+        """Salva configurações atuais no arquivo JSON de forma atômica."""
         try:
-            with open(self.settings_file, 'w', encoding='utf-8') as f:
+            tmp_file = self.settings_file + '.tmp'
+            with open(tmp_file, 'w', encoding='utf-8') as f:
                 json.dump(self.settings, f, indent=2, ensure_ascii=False)
-            print(f"Configurações salvas em {self.settings_file}")
+                
+            # Escrita atômica: substitui o arquivo original pelo temporário
+            os.replace(tmp_file, self.settings_file)
+            print(f"Configurações atômicas salvas em {self.settings_file}")
         except Exception as e:
             print(f"Erro ao salvar configurações: {e}")
+            # Em caso de erro, tenta varrer o lixo
+            if os.path.exists(self.settings_file + '.tmp'):
+                try: os.remove(self.settings_file + '.tmp')
+                except: pass
     
     def get(self, key, default=None):
         """Retorna uma configuração específica."""

@@ -136,6 +136,7 @@ python -m PyInstaller ^
     --hidden-import=numpy ^
     --hidden-import=PIL ^
     --collect-all=easyocr ^
+    --collect-all=scipy ^
     --collect-all=PyQt6 ^
     --collect-all=mss ^
     src\main.py
@@ -169,41 +170,16 @@ echo [5/6] Gerando instalador com Inno Setup...
 
 REM Procurar Inno Setup em locais comuns
 set "ISCC="
-if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (
-    set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-)
-if exist "C:\Program Files\Inno Setup 6\ISCC.exe" (
-    set "ISCC=C:\Program Files\Inno Setup 6\ISCC.exe"
-)
+
+if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if exist "C:\Program Files\Inno Setup 6\ISCC.exe" set "ISCC=C:\Program Files\Inno Setup 6\ISCC.exe"
 
 REM Procurar via PATH
 if "!ISCC!"=="" (
-    where ISCC.exe >nul 2>&1
-    if not errorlevel 1 (
-        for /f "tokens=*" %%p in ('where ISCC.exe') do set "ISCC=%%p"
-    )
+    for /f "tokens=*" %%p in ('where ISCC.exe 2^>nul') do set "ISCC=%%p"
 )
 
-if "!ISCC!"=="" (
-    echo.
-    echo  ============================================================
-    echo   AVISO: Inno Setup Compiler (ISCC.exe) nao encontrado!
-    echo  ============================================================
-    echo.
-    echo   O executavel foi compilado com sucesso em:
-    echo     dist\LiveCaptionArchiver\LiveCaptionArchiver.exe
-    echo.
-    echo   Para gerar o instalador LL.exe, voce precisa:
-    echo     1. Baixar Inno Setup 6: https://jrsoftware.org/isdl.php
-    echo     2. Instalar o Inno Setup
-    echo     3. Executar este script novamente
-    echo.
-    echo   Ou manualmente:
-    echo     "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" .agent\scripts\installer.iss
-    echo.
-    pause
-    exit /b 0
-)
+if "!ISCC!"=="" goto NO_INNO
 
 echo   Inno Setup encontrado: !ISCC!
 echo   Compilando instalador...
@@ -211,21 +187,13 @@ echo.
 
 "!ISCC!" "%PROJECT_ROOT%\.agent\scripts\installer.iss"
 
-if errorlevel 1 (
-    echo.
-    echo  ERRO: Falha ao gerar o instalador!
-    echo  Verifique os erros acima.
-    echo.
-    pause
-    exit /b 1
-)
+if errorlevel 1 goto ERR_INNO
 
 REM Verificar se LL.exe foi criado
 if not exist "%PROJECT_ROOT%\dist\LL.exe" (
     echo.
     echo  ERRO: O instalador LL.exe nao foi encontrado em dist\
     echo.
-    pause
     exit /b 1
 )
 
@@ -246,6 +214,31 @@ echo     Executavel:   dist\LiveCaptionArchiver\LiveCaptionArchiver.exe
 echo     Instalador:   dist\LL.exe
 echo.
 echo   Distribua apenas o arquivo LL.exe para os usuarios finais.
+
+exit /b 0
+
+:NO_INNO
+echo.
+echo  ============================================================
+echo   AVISO: Inno Setup Compiler nao encontrado!
+echo  ============================================================
+echo.
+echo   O executavel foi compilado com sucesso em:
+echo     dist\LiveCaptionArchiver\LiveCaptionArchiver.exe
+echo.
+echo   Para gerar o instalador LL.exe, voce precisa:
+echo     1. Baixar Inno Setup 6: https://jrsoftware.org/isdl.php
+echo     2. Instalar o Inno Setup
+echo     3. Executar este script novamente
+echo.
+exit /b 0
+
+:ERR_INNO
+echo.
+echo  ERRO: Falha ao gerar o instalador!
+echo  Verifique os erros acima.
+echo.
+exit /b 1
 echo   Ele contem tudo necessario para instalar o programa.
 echo.
 echo   O instalador permite:

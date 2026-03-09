@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QTextEdit, QLabel, QSpinBox, QCheckBox,
-                             QGroupBox, QStatusBar, QMessageBox, QProgressBar)
+                             QGroupBox, QStatusBar, QMessageBox, QProgressBar,
+                             QTabWidget, QListWidget, QListWidgetItem)
 from PyQt6.QtCore import pyqtSignal, Qt, pyqtSlot, QTimer
 from PyQt6.QtGui import QAction
 from src.ui.overlay import OverlaySelector
@@ -17,6 +18,12 @@ class MainWindow(QMainWindow):
     region_saved = pyqtSignal(int, int, int, int) # Emite quando região é salva manualmente
     config_saved = pyqtSignal(dict) # Emite quando configurações devem ser salvas
     clear_captions_requested = pyqtSignal() # Solicita limpeza de todos os arquivos de captions
+    custom_dir_changed = pyqtSignal(str) # Emite quando o usuário seleciona uma nova pasta de destino
+    generate_summary_requested = pyqtSignal() # Solicita geração do sumário
+    
+    # Sinais de Reparo e Validação
+    verify_system_requested = pyqtSignal()
+    repair_system_requested = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -42,7 +49,16 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+
+        # Tab Widget Global
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
+
+        # Aba 1: Principal
+        self.tab_main = QWidget()
+        self.tabs.addTab(self.tab_main, "📹 Gravação e Opções")
+        layout = QVBoxLayout(self.tab_main)
 
         # --- Controles Superiores ---
         controls_layout = QHBoxLayout()
@@ -71,12 +87,26 @@ class MainWindow(QMainWindow):
         self.btn_record.setMinimumWidth(160)
         controls_layout.addWidget(self.btn_record)
 
+        controls_layout.addStretch()
+
+        # --- Controles de Utilidade (Logs, Pastas, Sumário) ---
+        utils_layout = QHBoxLayout()
+        utils_layout.setSpacing(5)
+
         # Botão de Abrir Pasta de Logs
         self.btn_open_logs = QPushButton("📂  Abrir Logs")
         self.btn_open_logs.setObjectName("btn_open_logs")
         self.btn_open_logs.clicked.connect(self.open_log_folder)
         self.btn_open_logs.setMinimumWidth(120)
-        controls_layout.addWidget(self.btn_open_logs)
+        utils_layout.addWidget(self.btn_open_logs)
+
+        # Botão de Escolher Pasta
+        self.btn_choose_dir = QPushButton("📁 Escolher Pasta")
+        self.btn_choose_dir.setObjectName("btn_choose_dir")
+        self.btn_choose_dir.clicked.connect(self.choose_output_dir)
+        self.btn_choose_dir.setMinimumWidth(120)
+        self.btn_choose_dir.setToolTip("Escolha onde salvar os arquivos .txt")
+        utils_layout.addWidget(self.btn_choose_dir)
 
         # Botão de Limpar Captions
         self.btn_clear_captions = QPushButton("🗑  Limpar Captions")
@@ -84,27 +114,70 @@ class MainWindow(QMainWindow):
         self.btn_clear_captions.clicked.connect(self.clear_captions_requested.emit)
         self.btn_clear_captions.setMinimumWidth(140)
         self.btn_clear_captions.setToolTip("Remove todos os arquivos de captions (atual e históricos)")
-        controls_layout.addWidget(self.btn_clear_captions)
+        utils_layout.addWidget(self.btn_clear_captions)
+        
+        # Botão de Gerar Sumário
+        self.btn_generate_summary = QPushButton("📋 Gerar Sumário")
+        self.btn_generate_summary.setObjectName("btn_generate_summary")
+        self.btn_generate_summary.clicked.connect(self.generate_summary_requested.emit)
+        self.btn_generate_summary.setMinimumWidth(140)
+        self.btn_generate_summary.setToolTip("Identifica todas palavras únicas nos textos e gera um sumario.txt")
+        utils_layout.addWidget(self.btn_generate_summary)
+        
+        # Label de informações do sumário
+        self.lbl_summary_info = QLabel("")
+        self.lbl_summary_info.setStyleSheet("color: #aaa; font-size: 9pt;")
+        utils_layout.addWidget(self.lbl_summary_info)
 
-        controls_layout.addStretch()
-
-        # Botão de Instalação (Inicialmente Oculto)
-        self.btn_install = QPushButton("⬇  Instalar Dependências")
-        self.btn_install.setObjectName("btn_install")
-        self.btn_install.setVisible(False)
-        self.btn_install.clicked.connect(self.install_requested.emit)
-        controls_layout.addWidget(self.btn_install)
-
-        # Progress bar para download (inicialmente oculta)
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        self.progress_bar.setTextVisible(True)
-        self.progress_bar.setFormat("Baixando modelos... %p%")
-        layout.addWidget(self.progress_bar)
-
+        utils_layout.addStretch()
+        
+        # Ocultamos do row de gravação e movemos p baixo
         layout.addLayout(controls_layout)
+        layout.addLayout(utils_layout)
 
-        # --- Configurações ---
+        # Aba 2: Verificação e Reparo
+        self.tab_repair = QWidget()
+        self.tabs.addTab(self.tab_repair, "🔧 Verificação e Reparo")
+        repair_layout = QVBoxLayout(self.tab_repair)
+
+        repair_header = QLabel("<h3>Diagnóstico e Reparo do Sistema</h3>")
+        repair_layout.addWidget(repair_header)
+
+        repair_desc = QLabel("Verifique se as pastas de saída estão acessíveis e se os modelos pesados de Inteligência Artificial já estão baixados e instalados no seu computador. Clique em Resolver Tudo caso encontre problemas.")
+        repair_desc.setWordWrap(True)
+        repair_layout.addWidget(repair_desc)
+
+        # Lista de diagnósticos
+        self.list_diagnostics = QListWidget()
+        # Estilo customizado na list_diagnostics para fundo escuro, texto claro
+        self.list_diagnostics.setStyleSheet("background-color: #2b2b2b; color: #e0e0e0; font-size: 10pt; padding: 5px;")
+        repair_layout.addWidget(self.list_diagnostics)
+
+        # Botões de reparo
+        repair_btn_layout = QHBoxLayout()
+        self.btn_verify = QPushButton("🔍 Verificar Tudo")
+        self.btn_verify.setObjectName("btn_verify")
+        self.btn_verify.setMinimumHeight(40)
+        self.btn_verify.clicked.connect(self.verify_system_requested.emit)
+        repair_btn_layout.addWidget(self.btn_verify)
+
+        self.btn_repair = QPushButton("🛠️ Resolver Tudo (Fazer 100% Funcionar)")
+        self.btn_repair.setObjectName("btn_repair")
+        self.btn_repair.setMinimumHeight(40)
+        self.btn_repair.setStyleSheet("background-color: #005A36; color: white; font-weight: bold;")
+        self.btn_repair.clicked.connect(self.repair_system_requested.emit)
+        repair_btn_layout.addWidget(self.btn_repair)
+
+        repair_layout.addLayout(repair_btn_layout)
+
+        # Progress bar para download oculta e movida para a aba de Reparo, caso precise de feedback visual
+        self.repair_progress_bar = QProgressBar()
+        self.repair_progress_bar.setVisible(False)
+        self.repair_progress_bar.setTextVisible(True)
+        self.repair_progress_bar.setFormat("Baixando e Reparando... %p%")
+        repair_layout.addWidget(self.repair_progress_bar)
+
+        # --- Configurações (Ainda na aba Principal) ---
         config_group = QGroupBox("Configurações")
         config_layout = QVBoxLayout()
         config_layout.setSpacing(10)  # Espaçamento entre elementos
@@ -145,6 +218,27 @@ class MainWindow(QMainWindow):
         img_layout.addWidget(invert_explanation)
         img_layout.addStretch()  # Adiciona espaço flexível
         config_layout.addLayout(img_layout)
+
+        # Configurações de Arquivo
+        file_layout = QHBoxLayout()
+        file_layout.addWidget(QLabel("Máx Arquivos Salvos:"))
+        self.spin_max_files = QSpinBox()
+        self.spin_max_files.setRange(1, 50)
+        self.spin_max_files.setValue(5)
+        self.spin_max_files.setToolTip("Quantidade máxima de arquivos de textos históricos a serem mantidos.")
+        self.spin_max_files.valueChanged.connect(self.emit_config_update)
+        file_layout.addWidget(self.spin_max_files)
+        
+        file_layout.addWidget(QLabel("Tamanho Máx (MB):"))
+        self.spin_max_size_mb = QSpinBox()
+        self.spin_max_size_mb.setRange(1, 100)
+        self.spin_max_size_mb.setValue(2)
+        self.spin_max_size_mb.setToolTip("Tamanho máximo em MegaBytes antes de rotacionar para um novo arquivo.")
+        self.spin_max_size_mb.valueChanged.connect(self.emit_config_update)
+        file_layout.addWidget(self.spin_max_size_mb)
+        
+        file_layout.addStretch()
+        config_layout.addLayout(file_layout)
 
         config_group.setLayout(config_layout)
         layout.addWidget(config_group)
@@ -327,11 +421,31 @@ class MainWindow(QMainWindow):
         
         layout.addLayout(logs_layout)
 
-        # --- Status Bar ---
+        # --- Status Bar Central ---
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         version = __version__.get_version()
         self.status_bar.showMessage(f"Verificando dependências... | v{version}")
+
+    # --- Controle de Estado de Diagnósticos ---
+    def add_diagnostic_item(self, message, is_ok=True, pending=False):
+        """Adiciona ou atualiza item na aba de diagnósticos."""
+        item = QListWidgetItem()
+        if pending:
+            icon = "⏳"
+            color = "#a0a000"
+        elif is_ok:
+            icon = "✅"
+            color = "#00a000"
+        else:
+            icon = "❌"
+            color = "#d00000"
+            
+        item.setText(f"{icon} {message}")
+        self.list_diagnostics.addItem(item)
+        
+    def clear_diagnostics(self):
+        self.list_diagnostics.clear()
 
     # --- Controle de Estado de Dependências ---
     def _update_record_button_state(self):
@@ -345,26 +459,26 @@ class MainWindow(QMainWindow):
         self.btn_select_region.setVisible(False)
         self.btn_record.setVisible(False)
 
-        self.btn_install.setVisible(True)
-        self.btn_install.setEnabled(True)
-        self.btn_install.setText("Instalar Dependências (Automático)")
-        self.status_bar.showMessage("Dependências necessárias. Clique em Instalar para baixar.")
+        self.status_bar.showMessage("Dependências incompletas! Vá para a guia de Verificação e Reparo.")
         self._update_record_button_state()
 
     def set_installing_state(self):
-        """Estado durante download."""
+        """Estado durante download e reparo."""
         self.dependencies_ready = False
-        self.btn_install.setEnabled(False)
-        self.btn_install.setText("Instalando... Aguarde.")
-        self.status_bar.showMessage("Baixando modelos OCR. Isso pode levar alguns minutos...")
+        self.btn_repair.setEnabled(False)
+        self.btn_verify.setEnabled(False)
+        self.repair_progress_bar.setVisible(True)
+        self.status_bar.showMessage("Baixando e reparando o sistema. Isso pode demorar...")
         self._update_record_button_state()
 
     def set_ready_state(self):
         """Estado normal de operação."""
         self.dependencies_ready = True
-        self.btn_install.setVisible(False)
         self.btn_select_region.setVisible(True)
         self.btn_record.setVisible(True)
+        self.btn_repair.setEnabled(True)
+        self.btn_verify.setEnabled(True)
+        self.repair_progress_bar.setVisible(False)
         self.status_bar.showMessage("Pronto. Selecione uma região para começar.")
         self._update_record_button_state()
 
@@ -432,7 +546,9 @@ class MainWindow(QMainWindow):
             "auto_smart_adjust": self.chk_smart_adjust.isChecked(),
             "jitter_detection_threshold": self.spin_jitter_threshold.value(),
             "stability_detection_threshold": self.spin_stability_threshold.value(),
-            "repetition_threshold": self.spin_repetition_threshold.value() / 100.0
+            "repetition_threshold": self.spin_repetition_threshold.value() / 100.0,
+            "max_log_files": self.spin_max_files.value(),
+            "max_log_size_mb": self.spin_max_size_mb.value()
         }
 
     def emit_config_update(self):
@@ -456,6 +572,8 @@ class MainWindow(QMainWindow):
         self.spin_jitter_threshold.blockSignals(True)
         self.spin_stability_threshold.blockSignals(True)
         self.spin_repetition_threshold.blockSignals(True)
+        self.spin_max_files.blockSignals(True)
+        self.spin_max_size_mb.blockSignals(True)
         
         # Carrega valores salvos (usa valores padrão se não existirem)
         self.spin_timeout.setValue(settings.get('timeout_ms', 1500))
@@ -468,6 +586,10 @@ class MainWindow(QMainWindow):
         self.spin_min_interval.setValue(settings.get('min_update_interval', 50))
         self.spin_recalc_interval.setValue(settings.get('auto_recalc_interval', 30))
         self.chk_smart_adjust.setChecked(settings.get('auto_smart_adjust', False))
+        
+        # Carrega limitadores de arquivo
+        self.spin_max_files.setValue(settings.get('max_log_files', 5))
+        self.spin_max_size_mb.setValue(settings.get('max_log_size_mb', 2))
         
         # Novos parâmetros avançados
         self.spin_jitter_threshold.setValue(settings.get('jitter_detection_threshold', 50))
@@ -486,6 +608,8 @@ class MainWindow(QMainWindow):
         self.spin_jitter_threshold.blockSignals(False)
         self.spin_stability_threshold.blockSignals(False)
         self.spin_repetition_threshold.blockSignals(False)
+        self.spin_max_files.blockSignals(False)
+        self.spin_max_size_mb.blockSignals(False)
 
     def save_current_region(self):
         """Salva a região de captura atual. Se o overlay estiver aberto, confirma a seleção."""
@@ -519,15 +643,19 @@ class MainWindow(QMainWindow):
             # Emite sinal para atualizar o worker
             self.region_changed.emit(region_data['x'], region_data['y'], region_data['width'], region_data['height'])
 
+    def choose_output_dir(self):
+        from PyQt6.QtWidgets import QFileDialog
+        dir_path = QFileDialog.getExistingDirectory(self, "Selecione a pasta para salvar legendas")
+        if dir_path:
+            self.custom_dir_changed.emit(dir_path)
+            self.status_bar.showMessage(f"Nova pasta: {dir_path}", 3000)
+
+    # Nova signal para permitir a main app resolver a pasta ou o próprio FileManager.
+    open_folder_requested = pyqtSignal()
+
     def open_log_folder(self):
         """Abre a pasta onde os logs são salvos."""
-        import os
-        from src.utils.paths import get_captions_dir
-        log_dir = get_captions_dir()
-        if os.path.exists(log_dir):
-            os.startfile(log_dir)
-        else:
-            QMessageBox.warning(self, "Pasta Não Encontrada", f"A pasta de logs não existe: {log_dir}")
+        self.open_folder_requested.emit()
 
     @pyqtSlot(str)
     def append_log(self, text):
@@ -652,3 +780,7 @@ class MainWindow(QMainWindow):
 
     def show_error(self, title, message):
         QMessageBox.critical(self, title, message)
+        
+    @pyqtSlot(str)
+    def update_summary_info(self, text):
+        self.lbl_summary_info.setText(text)
